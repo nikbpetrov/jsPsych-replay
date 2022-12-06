@@ -2,10 +2,25 @@
 
 Additional functionality for [jsPsych](https://github.com/jspsych/jsPsych) that allows to record and replay user behaviour.
 
-Record             |  Replay
-:-----------------:|:-------------------------:
-<pre>const jsPsych = initJsPsych({<br>log_data_for_replay: true,<br>data_for_replay_local_save: true<br>})</pre>`jsPsych.run(timeline)` <br><br> Make sure to save the `data_for_replay` file. | `jsPsych.replay('data_for_replay.txt')`
-![Record demo gif](jspsych-replay-record.gif) | ![Replay demo gif](jspsych-replay-replay.gif)
+# Record
+```javascript
+const jsPsych = initJsPsych({
+	log_data_for_replay: true,
+	data_for_replay_local_save: true
+})
+
+jsPsych.run(timeline)
+```
+
+Make sure to save the `data_for_replay` file.
+
+# Replay
+
+```javascript
+jsPsych.replay('data_for_replay.txt')
+```
+
+<img src="jspsych-replay-record.gif" width="45%">......................<img src="jspsych-replay-replay.gif" width="45%">
 
 # 1. How to use
 
