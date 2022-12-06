@@ -1,3 +1,223 @@
+// Calculate a string representation of a node's DOM path.
+// credits for pathToSelector and serializeEvent: https://stackoverflow.com/a/42284488/13078832
+var pathToSelector = function(node) {
+  if (!node || !node.outerHTML) {
+    return null;
+  }
+
+  var path;
+  while (node.parentElement) {
+    var name = node.localName;
+    if (!name) break;
+    name = name.toLowerCase();
+    var parent = node.parentElement;
+
+    var domSiblings = [];
+
+    if (parent.children && parent.children.length > 0) {
+      for (var i = 0; i < parent.children.length; i++) {
+        var sibling = parent.children[i];
+        if (sibling.localName && sibling.localName.toLowerCase) {
+          if (sibling.localName.toLowerCase() === name) {
+            domSiblings.push(sibling);
+          }
+        }
+      }
+    }
+
+    if (domSiblings.length > 1) {
+      name += ':eq(' + domSiblings.indexOf(node) + ')';
+    }
+    path = name + (path ? '>' + path : '');
+    node = parent;
+  }
+
+  return path;
+};
+
+// Generate a JSON version of the event.
+var serializeEvent = function(e, viewport_width, viewport_height) {
+  if (e) {
+    var o = {
+      eventName: e.toString(),
+      key: e.key,
+      altKey: e.altKey,
+      bubbles: e.bubbles,
+      button: e.button,
+      buttons: e.buttons,
+      cancelBubble: e.cancelBubble,
+      cancelable: e.cancelable,
+      clientX: e.clientX,
+      clientY: e.clientY,
+      composed: e.composed,
+      ctrlKey: e.ctrlKey,
+      currentTarget: e.currentTarget ? e.currentTarget.outerHTML : null,
+      defaultPrevented: e.defaultPrevented,
+      detail: e.detail,
+      eventPhase: e.eventPhase,
+      fromElement: e.fromElement ? e.fromElement.outerHTML : null,
+      isTrusted: e.isTrusted,
+      layerX: e.layerX,
+      layerY: e.layerY,
+      metaKey: e.metaKey,
+      movementX: e.movementX,
+      movementY: e.movementY,
+      offsetX: e.offsetX,
+      offsetY: e.offsetY,
+      pageX: e.pageX,
+      pageY: e.pageY,
+      path: pathToSelector(e.path && e.path.length ? e.path[0] : null),
+      relatedTarget: e.relatedTarget ? e.relatedTarget.outerHTML : null,
+      returnValue: e.returnValue,
+      screenX: e.screenX,
+      screenY: e.screenY,
+      shiftKey: e.shiftKey,
+      sourceCapabilities: e.sourceCapabilities ? e.sourceCapabilities.toString() : null,
+      target: e.target ? e.target.outerHTML : null,
+      parent: e.target.parentElement ? e.target.parentElement.outerHTML : null,
+      timeStamp: e.timeStamp,
+      toElement: e.toElement ? e.toElement.outerHTML : null,
+      type: e.type,
+      view: e.view ? e.view.toString() : null,
+      which: e.which,
+      x: e.x,
+      y: e.y,
+      clientX_relative_to_viewport: e.clientX / viewport_width,
+      clientY_relative_to_viewport: e.clientY / viewport_height
+    };
+
+    return JSON.stringify(o, null, 2)
+  }
+};
+
+const replay_events_to_register = ['keydown', 'keyup', 
+                                    'click', 'mousedown', 'mouseup', 'mousemove']
+
+let register_start_time
+function replay_event_handler(event) {
+    let curr_event_object = {event: event,
+                            time_since_start: performance.now() - register_start_time,
+                            viewport_width: window.innerWidth || document.documentElement.clientWidth || document.body.clientWidth,
+                            viewport_height: window.innerHeight || document.documentElement.clientHeight || document.body.clientHeight}
+    jsPsych.data_for_replay['all_replay_events'].push(curr_event_object)
+}
+
+function register_replay_event_listeners() {
+    console.log(`Registered listeners!`)
+    for (const event_listener of replay_events_to_register) {
+        window.addEventListener(event_listener, replay_event_handler)
+    }
+}
+
+function remove_replay_event_listeners() {
+    for (const event_listener of replay_events_to_register) {
+        window.removeEventListener(event_listener, replay_event_handler)
+    }
+}
+
+function serialize_all_replay_events_data() {
+    for (const e of jsPsych.data_for_replay['all_replay_events']) {
+        e['event'] = serializeEvent(e['event'], e['viewport_width'], e['viewport_height'])
+    }
+    jsPsych.data_for_replay['all_replay_events'] = Cryo.stringify(jsPsych.data_for_replay['all_replay_events'])
+}
+
+function format_data_for_replay_for_text_file() {
+    jsPsych.data_for_replay = String.raw`timeline_for_replay = ${jsPsych.data_for_replay['timeline']};all_replay_events = ${jsPsych.data_for_replay['all_replay_events']}`
+}
+
+let last_5_event_reports = []
+event_reports_container = document.createElement('div')
+event_reports_container.classList.add('event-reports-container')
+event_reports_container.innerHTML = '-----Last 5 events-----'
+function display_event_report(event_report) {
+    last_5_event_reports.push(event_report)
+    if (last_5_event_reports.length == 6) {
+        last_5_event_reports.shift()
+    }
+    event_reports_container.innerHTML = '-----Last 5 events-----'
+    for (const e of last_5_event_reports) {
+        event_reports_container.innerHTML += `${e}<br>`
+    }
+}
+
+function start_replay(utils) {
+    document.body.prepend(event_reports_container)
+    for (const event_obj of jsPsych.data_for_replay['all_replay_events']) {
+        const time_since_start = event_obj['time_since_start']
+        const custom_event_obj_deserialized = JSON.parse(event_obj['event'])
+
+        let event_type = custom_event_obj_deserialized.type
+        let event_to_trigger_props = utils.deepCopy(custom_event_obj_deserialized)
+        event_to_trigger_props.view = window //dunno about this one, just works
+        let event_to_trigger
+        if (event_type == 'click' || event_type == 'mousedown' || event_type == 'mouse_up') {
+            event_to_trigger = new MouseEvent(event_type, {bubbles: true})
+            // might be worth handling timeout centrally, in case the user advances a trial prematurely
+            // though the user is not expected to interact with the experiment, so they do so at their peril
+            setTimeout(function () {
+                // the parent element here is needed so we can properly be interacting with jspsych buttons on the screen
+                // this is likely to throw error in different scenarios as interacting directly with the jspsych content is not always straightforward
+                let parent_element = new DOMParser().parseFromString(custom_event_obj_deserialized.parent, "text/xml").activeElement
+                let parent_attribute = parent_element.getAttribute('data-choice') 
+
+                let target
+                if (parent_attribute !== null) {
+                    target = document.body.querySelector(`div[data-choice="${parent_attribute}"] button`)
+                } else {
+                    target = document.body
+                }
+                target.dispatchEvent(event_to_trigger)
+
+                if (event_type == 'click') {
+                    let click_animation_el = document.createElement('div')
+                    click_animation_el.classList.add('click_animation')
+                    click_animation_el.style.top = `${custom_event_obj_deserialized.clientY_relative_to_viewport*100}%`
+                    click_animation_el.style.left = `${custom_event_obj_deserialized.clientX_relative_to_viewport*100}%`
+                    document.body.prepend(click_animation_el)
+                    click_animation_el.animate(
+                        {
+                            width: '50px', 
+                            height: '50px',
+                            top: `calc(${custom_event_obj_deserialized.clientY_relative_to_viewport*100}% - 25px)`,
+                            left: `calc(${custom_event_obj_deserialized.clientX_relative_to_viewport*100}% - 25px)`
+                        },
+                        {
+                            duration: 500, 
+                            easing: 'ease-out', 
+                            iterations: 1
+                        }
+                    )
+                    setTimeout(function() {
+                        click_animation_el.remove()
+                    }, 500)
+                }
+            }, time_since_start)
+        } else if (event_type == 'keydown' || event_type == 'keyup') {
+            event_to_trigger = new KeyboardEvent(event_type, event_to_trigger_props)
+            setTimeout(function() {
+                document.body.dispatchEvent(event_to_trigger)
+                if (event_type == 'keydown') {
+                    display_event_report(`Event: ${event_type}, Key: ${event_to_trigger_props.key}`)
+                }
+            }, time_since_start)
+        } else if (event_type == 'mousemove') {
+            function add_point() {
+                let point = document.createElement('div')
+                point.classList.add('mousemove_point')
+                point.style.top = `${custom_event_obj_deserialized.clientY_relative_to_viewport*100}%`
+                point.style.left = `${custom_event_obj_deserialized.clientX_relative_to_viewport*100}%`
+                document.body.prepend(point)
+
+                setTimeout(function() {
+                    point.remove()
+                }, 1000)
+            }
+            setTimeout(add_point, time_since_start)
+        }        
+    }
+}
+
 var jsPsychModule = (function (exports) {
     'use strict';
 
@@ -2643,7 +2863,7 @@ var jsPsychModule = (function (exports) {
             };
             this.progress_bar_amount = 0;
             // override default options if user specifies an option
-            options = Object.assign({ display_element: undefined, on_finish: () => { }, on_trial_start: () => { }, on_trial_finish: () => { }, on_data_update: () => { }, on_interaction_data_update: () => { }, on_close: () => { }, use_webaudio: true, exclusions: {}, show_progress_bar: false, message_progress_bar: "Completion Progress", auto_update_progress_bar: true, default_iti: 0, minimum_valid_rt: 0, experiment_width: null, override_safe_mode: false, case_sensitive_responses: false, extensions: [] }, options);
+            options = Object.assign({ log_data_for_replay: false, data_for_replay_local_save: false, display_element: undefined, on_finish: () => { }, on_trial_start: () => { }, on_trial_finish: () => { }, on_data_update: () => { }, on_interaction_data_update: () => { }, on_close: () => { }, use_webaudio: true, exclusions: {}, show_progress_bar: false, message_progress_bar: "Completion Progress", auto_update_progress_bar: true, default_iti: 0, minimum_valid_rt: 0, experiment_width: null, override_safe_mode: false, case_sensitive_responses: false, extensions: [] }, options);
             this.opts = options;
             autoBind(this); // so we can pass JsPsych methods as callbacks and `this` remains the JsPsych instance
             this.webaudio_context =
@@ -2669,6 +2889,7 @@ var jsPsychModule = (function (exports) {
             }
             // initialize audio context based on options and browser capabilities
             this.pluginAPI.initAudio();
+            this.data_for_replay = {'timeline': [], 'all_replay_events': []}
         }
         version() {
             return version;
@@ -2695,8 +2916,50 @@ var jsPsychModule = (function (exports) {
                 yield this.loadExtensions(this.opts.extensions);
                 document.documentElement.setAttribute("jspsych", "present");
                 this.startExperiment();
+                register_start_time = performance.now()
+                if (jsPsych.opts.log_data_for_replay) {
+                    jsPsych.data_for_replay['timeline'] = Cryo.stringify(timeline)
+                    register_replay_event_listeners(this)
+                }
                 yield this.finished;
             });
+        }
+        replay(data_for_replay_file) {
+            let data_for_replay_script = document.createElement('script')
+            data_for_replay_script.src = data_for_replay_file
+            data_for_replay_script.type = "text/javascript"
+            document.head.appendChild(data_for_replay_script)
+
+            let that = this
+            data_for_replay_script.addEventListener('load', function() {
+                that.data_for_replay['timeline'] = Cryo.parse(JSON.stringify(timeline_for_replay))
+                that.data_for_replay['all_replay_events'] = Cryo.parse(JSON.stringify(all_replay_events))
+                return __awaiter(that, void 0, void 0, function* () {
+                    timeline = that.data_for_replay['timeline']
+
+                    if (typeof timeline === "undefined") {
+                        console.error("No timeline declared in jsPsych.run. Cannot start experiment.");
+                    }
+                    if (timeline.length === 0) {
+                        console.error("No trials have been added to the timeline (the timeline is an empty array). Cannot start experiment.");
+                    }
+
+                    // create experiment timeline
+                    that.timelineDescription = timeline;
+                    that.timeline = new TimelineNode(that, { timeline });
+                    yield that.prepareDom();
+                    yield that.checkExclusions(that.opts.exclusions);
+                    yield that.loadExtensions(that.opts.extensions);
+                    document.documentElement.setAttribute("jspsych", "present");
+                    that.startExperiment();
+                    register_start_time = performance.now()
+                    // just need the deepCopy function
+                    start_replay(that.utils)
+                    yield that.finished;
+                });
+            })
+
+            
         }
         simulate(timeline, simulation_mode = "data-only", simulation_options = {}) {
             return __awaiter(this, void 0, void 0, function* () {
@@ -2966,6 +3229,11 @@ var jsPsychModule = (function (exports) {
             this.doTrial(this.timeline.trial());
         }
         finishExperiment() {
+            if (this.opts.log_data_for_replay) {
+                remove_replay_event_listeners()
+                serialize_all_replay_events_data()
+                format_data_for_replay_for_text_file()
+            }
             const finish_result = this.opts.on_finish(this.data.get());
             const done_handler = () => {
                 if (typeof this.timeline.end_message !== "undefined") {
@@ -2978,6 +3246,9 @@ var jsPsychModule = (function (exports) {
             }
             else {
                 done_handler();
+            }
+            if (this.opts.log_data_for_replay & this.opts.data_for_replay_local_save) {
+                saveTextToFile(jsPsych.data_for_replay, 'data_for_replay.txt')
             }
         }
         nextTrial() {
