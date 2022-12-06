@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html>
+<head>
+	<title>jsPsych Replay</title>
+	<script src="dist/jspsych.js"></script>
+	<script src="dist/plugin-html-keyboard-response.js"></script>
+	<script src="dist/plugin-html-button-response.js"></script>
+	<script src="dist/plugin-survey-text.js"></script>
+	<link href="dist/jspsych.css" rel="stylesheet" type="text/css"></link>
+
+	<script src="cryo-0.0.6.js"></script>
+</head>
+
+<body>
+</body>
+
+<script>
+	let timeline = []
+	
+	var trial1 = {
+		type: jsPsychHtmlKeyboardResponse,
+		stimulus: function() {return `timeline var var1: ${jsPsych.timelineVariable('var1', true)}`},
+		choices: ' '
+	};
+
+	var trial2 = {
+		type: jsPsychHtmlButtonResponse,
+		stimulus: 'trial2',
+		choices: ['button1', 'button2'],
+		on_start: function(trial) {
+			// this and the above stimulus function are both evidence that retriving the stringified timeline works like a charm!
+			trial.stimulus = `timeline variable var2: ${jsPsych.timelineVariable('var2', true)}`
+		}
+	};
+
+	var trial3 = {
+		type: jsPsychHtmlKeyboardResponse,
+		stimulus: 'trial 3',
+		choices: 'a'
+	};
+
+	timeline.push({timeline: [trial1, trial2, trial3],
+					timeline_variables: [{var1: 'a', var2: 'b'}]})
+
+	let jsPsych = initJsPsych({
+		log_data_for_replay: false,
+		data_for_replay_local_save: true,
+		on_finish: function() {
+			jsPsych.data.displayData('json');
+		}
+	})
+
+	if (jsPsych.opts.log_data_for_replay) {
+		jsPsych.run(timeline)
+	} else {
+		jsPsych.replay('data_for_replay.txt')
+	}
+
+  </script>
+</html>
